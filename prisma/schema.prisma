@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  ADMIN
+  STUDENT
+}
+
+enum ExamStatus {
+  DRAFT
+  READY
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum QuestionType {
+  PYTHON
+  PANDAS
+  SQL
+}
+
+enum AttemptStatus {
+  NOT_STARTED
+  STARTED
+  ACTIVE
+  DISCONNECTED
+  SUBMITTED
+  COMPLETED
+  FORCE_SUBMITTED
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED
+  EXPIRED
+}
+
+enum SubmissionStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  ERROR
+  TIMEOUT
+}
+
+enum AuditEventType {
+  LOGIN_ATTEMPT
+  VERIFY_SUCCESS
+  VERIFY_FAILURE
+  ACTIVATION
+  DEACTIVATION
+  EXAM_STARTED
+  EXAM_PAUSED
+  EXAM_RESUMED
+  EXAM_COMPLETED
+  QUESTION_OPENED
+  CODE_SAVED
+  CODE_RUN
+  SUBMISSION
+  DISCONNECT
+  RECONNECT
+  FOCUS_CHANGE
+  FORCED_SUBMISSION
+  ADMIN_ACTION
+  SESSION_RESET
+}
+
+model Student {
+  id          String        @id @default(cuid())
+  prn         String        @unique
+  name        String
+  email       String        @unique
+  section     String
+  seatNumber  String        @map("seat_number")
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  activations ExamStudent[]
+  attempts    ExamAttempt[]
+  sessions    Session[]
+  auditLogs   AuditLog[]
+
+  @@index([prn])
+  @@index([email])
+  @@map("students")
+}
+
+model Admin {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  role         UserRole      @default(ADMIN)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  activations  ExamStudent[] @relation("ActivationAdmin")
+  auditLogs    AuditLog[]
+
+  @@map("admins")
+}
+
+model Exam {
+  id               String        @id @default(cuid())
+  title            String
+  description      String
+  durationMinutes  Int           @map("duration_minutes")
+  totalMarks       Int           @map("total_marks")
+  status           ExamStatus    @default(DRAFT)
+  accessCodeHash   String?       @map("access_code_hash")
+  codeGeneratedAt  DateTime?     @map("code_generated_at")
+  randomizeOrder   Boolean       @default(false) @map("randomize_order")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  questions        Question[]
+  students         ExamStudent[]
+  attempts         ExamAttempt[]
+  auditLogs        AuditLog[]
+
+  @@index([status])
+  @@map("exams")
+}
+
+model Question {
+  id              String            @id @default(cuid())
+  examId          String            @map("exam_id")
+  type            QuestionType
+  title           String
+  description     String
+  instructions    String
+  marks           Int
+  difficulty      String
+  language        String
+  starterCode     String            @map("starter_code")
+  timeLimitMs     Int               @default(3000) @map("time_limit_ms")
+  memoryLimitMb   Int               @default(256) @map("memory_limit_mb")
+  order           Int
+  createdAt       DateTime          @default(now()) @map("created_at")
+  exam            Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  testCases       TestCase[]
+  datasets        Dataset[]
+  questionAttempts QuestionAttempt[]
+  submissions     Submission[]
+
+  @@index([examId, order])
+  @@map("questions")
+}
+
+model TestCase {
+  id             String   @id @default(cuid())
+  questionId     String   @map("question_id")
+  name           String
+  input          Json
+  expectedOutput Json     @map("expected_output")
+  public         Boolean  @default(false)
+  weight         Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at")
+  question       Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, public])
+  @@map("test_cases")
+}
+
+model Dataset {
+  id         String   @id @default(cuid())
+  questionId String   @map("question_id")
+  filename   String
+  content    String
+  public     Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@map("datasets")
+}
+
+model ExamStudent {
+  id          String   @id @default(cuid())
+  examId      String   @map("exam_id")
+  studentId   String   @map("student_id")
+  activatedAt DateTime @default(now()) @map("activated_at")
+  activatedBy String   @map("activated_by")
+  active      Boolean  @default(true)
+  exam        Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  admin       Admin    @relation("ActivationAdmin", fields: [activatedBy], references: [id])
+
+  @@unique([examId, studentId])
+  @@index([studentId])
+  @@map("exam_students")
+}
+
+model ExamAttempt {
+  id              String            @id @default(cuid())
+  examId          String            @map("exam_id")
+  studentId       String            @map("student_id")
+  status          AttemptStatus     @default(STARTED)
+  startedAt       DateTime          @default(now()) @map("started_at")
+  durationSeconds Int               @map("duration_seconds")
+  deadline        DateTime
+  submittedAt     DateTime?         @map("submitted_at")
+  completedAt     DateTime?         @map("completed_at")
+  lastSeenAt      DateTime          @default(now()) @map("last_seen_at")
+  totalScore      Float             @default(0) @map("total_score")
+  exam            Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student         Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  questionAttempts QuestionAttempt[]
+  submissions     Submission[]
+  jobs            ExecutionJob[]
+  sessions        Session[]
+
+  @@index([studentId])
+  @@index([examId])
+  @@index([examId, studentId, status])
+  @@map("exam_attempts")
+}
+
+model QuestionAttempt {
+  id              String      @id @default(cuid())
+  attemptId       String      @map("attempt_id")
+  questionId      String      @map("question_id")
+  code            String
+  status          String      @default("UNANSWERED")
+  score           Float       @default(0)
+  passedTests     Int         @default(0) @map("passed_tests")
+  totalTests      Int         @default(0) @map("total_tests")
+  lastSavedAt     DateTime    @default(now()) @map("last_saved_at")
+  attempt         ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question        Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@map("question_attempts")
+}
+
+model Submission {
+  id            String           @id @default(cuid())
+  attemptId     String           @map("exam_attempt_id")
+  questionId    String           @map("question_id")
+  code          String
+  language      String
+  mode          String           @default("SUBMIT")
+  status        SubmissionStatus @default(QUEUED)
+  score         Float            @default(0)
+  passedTests   Int              @default(0) @map("passed_tests")
+  totalTests    Int              @default(0) @map("total_tests")
+  executionTime Int?             @map("execution_time")
+  stderr        String?
+  stdout        String?
+  submittedAt   DateTime         @default(now()) @map("submitted_at")
+  attempt       ExamAttempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question      Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  jobs          ExecutionJob[]
+
+  @@index([attemptId])
+  @@index([questionId])
+  @@map("submissions")
+}
+
+model ExecutionJob {
+  id           String           @id @default(cuid())
+  attemptId    String           @map("attempt_id")
+  submissionId String           @map("submission_id")
+  status       SubmissionStatus @default(QUEUED)
+  runHidden    Boolean          @default(false) @map("run_hidden")
+  lockedAt     DateTime?        @map("locked_at")
+  startedAt    DateTime?        @map("started_at")
+  finishedAt   DateTime?        @map("finished_at")
+  error         String?
+  createdAt    DateTime         @default(now()) @map("created_at")
+  attempt      ExamAttempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  submission   Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([attemptId])
+  @@map("execution_jobs")
+}
+
+model Session {
+  id          String        @id @default(cuid())
+  studentId   String        @map("student_id")
+  attemptId   String        @map("attempt_id")
+  tokenHash   String        @unique @map("token_hash")
+  status      SessionStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  lastSeenAt  DateTime      @default(now()) @map("last_seen_at")
+  userAgent   String?       @map("user_agent")
+  ipHash      String?       @map("ip_hash")
+  student     Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  attempt     ExamAttempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, status])
+  @@index([attemptId, status])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id        String         @id @default(cuid())
+  examId    String?        @map("exam_id")
+  studentId String?        @map("student_id")
+  adminId   String?        @map("admin_id")
+  attemptId String?        @map("attempt_id")
+  eventType AuditEventType @map("event_type")
+  metadata  Json?
+  createdAt DateTime       @default(now()) @map("created_at")
+  exam      Exam?          @relation(fields: [examId], references: [id], onDelete: SetNull)
+  student   Student?       @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  admin     Admin?         @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([examId, createdAt])
+  @@index([studentId, createdAt])
+  @@map("audit_logs")
+}
