@@ -1,12 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { ExamWorkspace } from "@/components/exam-workspace";
-import { getStudentSession } from "@/lib/auth";
+import { requireActiveStudentSession } from "@/lib/auth";
 import { getAttemptWorkspace } from "@/lib/student-data";
 
 export default async function ExamPage({ params }: { params: { attemptId: string } }) {
-  const session = await getStudentSession();
+  const session = await requireActiveStudentSession(params.attemptId);
 
-  if (!session || session.attemptId !== params.attemptId) {
+  if (!session) {
     redirect("/");
   }
 

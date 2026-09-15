@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
+import { prisma } from "@/lib/prisma";
 
 export type AdminSession = {
   adminId: string;
@@ -42,6 +43,29 @@ export async function getAdminSession() {
 
 export async function getStudentSession() {
   return readSessionCookie<StudentSession>("student_session");
+}
+
+export async function requireActiveStudentSession(attemptId: string) {
+  const session = await getStudentSession();
+  if (!session || session.attemptId !== attemptId) {
+    return null;
+  }
+
+  const activeSession = await prisma.session.findFirst({
+    where: {
+      id: session.sessionId,
+      attemptId,
+      studentId: session.studentId,
+      status: "ACTIVE",
+      attempt: {
+        id: attemptId,
+        studentId: session.studentId
+      }
+    },
+    select: { id: true }
+  });
+
+  return activeSession ? session : null;
 }
 
 export function cookieOptions() {

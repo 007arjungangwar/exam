@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getStudentSession } from "@/lib/auth";
+import { requireActiveStudentSession } from "@/lib/auth";
 import { closeExpiredAttempt, isOpenAttemptStatus } from "@/lib/attempt-state";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(_request: Request, { params }: { params: { attemptId: string } }) {
-  const session = await getStudentSession();
-  if (!session || session.attemptId !== params.attemptId) {
+  const session = await requireActiveStudentSession(params.attemptId);
+  if (!session) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 

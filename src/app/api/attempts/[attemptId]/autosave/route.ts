@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getStudentSession } from "@/lib/auth";
+import { requireActiveStudentSession } from "@/lib/auth";
 import { autosaveCode } from "@/lib/submission-service";
 
 const schema = z.object({
@@ -9,8 +9,8 @@ const schema = z.object({
 });
 
 export async function POST(request: Request, { params }: { params: { attemptId: string } }) {
-  const session = await getStudentSession();
-  if (!session || session.attemptId !== params.attemptId) {
+  const session = await requireActiveStudentSession(params.attemptId);
+  if (!session) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 

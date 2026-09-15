@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getStudentSession } from "@/lib/auth";
+import { requireActiveStudentSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createSubmission } from "@/lib/submission-service";
 import { rateLimit } from "@/lib/rate-limit";
@@ -12,8 +12,8 @@ const schema = z.object({
 });
 
 export async function POST(request: Request, { params }: { params: { attemptId: string } }) {
-  const session = await getStudentSession();
-  if (!session || session.attemptId !== params.attemptId) {
+  const session = await requireActiveStudentSession(params.attemptId);
+  if (!session) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
@@ -32,8 +32,8 @@ export async function POST(request: Request, { params }: { params: { attemptId: 
 }
 
 export async function GET(request: Request, { params }: { params: { attemptId: string } }) {
-  const session = await getStudentSession();
-  if (!session || session.attemptId !== params.attemptId) {
+  const session = await requireActiveStudentSession(params.attemptId);
+  if (!session) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
